@@ -1,6 +1,6 @@
 class Api::ExpensesController < ApplicationController
   def index
-    expenses = Expense.includes(:category).order(created_at: :desc)
+    expenses = Expense.includes(:category).order(date: :desc, created_at: :desc)
 
     if params[:year].present? && params[:month].present?
       year = params[:year].to_i
@@ -9,13 +9,15 @@ class Api::ExpensesController < ApplicationController
       start_date = Date.new(year, month, 1)
       end_date = start_date.end_of_month
 
-      expenses = expenses.where(created_at: start_date.beginning_of_day..end_date.end_of_day)
+      expenses = expenses.where(date: start_date..end_date)
     end
 
     render json: expenses.map { |expense| format_expense(expense) }
   end
 
   def create
+    return render_future_date_error if future_date?(expense_params[:date])
+
     expense = Expense.new(expense_params)
 
     if expense.save
@@ -27,6 +29,8 @@ class Api::ExpensesController < ApplicationController
 
   def update
     expense = Expense.find(params[:id])
+
+    return render_future_date_error if future_date?(expense_params[:date])
 
     if expense.update(expense_params)
       render json: format_expense(expense)
@@ -45,6 +49,17 @@ class Api::ExpensesController < ApplicationController
 
   def expense_params
     params.require(:expense).permit(:description, :amount, :category_id, :date)
+  end
+
+  def future_date?(value)
+    return false if value.blank?
+    Date.parse(value.to_s) > Date.current
+  rescue ArgumentError
+    false
+  end
+
+  def render_future_date_error
+    render json: { errors: ["Expense date cannot be in the future"] }, status: :unprocessable_entity
   end
 
   def format_expense(expense)
