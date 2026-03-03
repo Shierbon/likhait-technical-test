@@ -1,10 +1,5 @@
-/**
- * Form component for adding/editing expenses
- */
-
 import React from "react";
 import { ExpenseFormData } from "../types";
-import { EXPENSE_CATEGORIES } from "../constants/categories";
 import { TextField, SelectBox, Button } from "../vibes";
 import { useExpenseForm } from "../hooks/useExpenseForm";
 
@@ -13,6 +8,8 @@ interface ExpenseFormProps {
   onSubmit: (data: ExpenseFormData) => Promise<void>;
   onCancel?: () => void;
   submitLabel?: string;
+  categories: string[];
+  onAddCategory?: () => void;
 }
 
 export function ExpenseForm({
@@ -20,12 +17,11 @@ export function ExpenseForm({
   onSubmit,
   onCancel,
   submitLabel = "Add Expense",
+  categories,
+  onAddCategory,
 }: ExpenseFormProps) {
   const { formData, errors, isSubmitting, handleChange, handleSubmit } =
-    useExpenseForm({
-      initialData,
-      onSubmit,
-    });
+    useExpenseForm({ initialData, onSubmit });
 
   const formStyle: React.CSSProperties = {
     display: "flex",
@@ -39,35 +35,21 @@ export function ExpenseForm({
     marginTop: "0.5rem",
   };
 
-  const categoryOptions = EXPENSE_CATEGORIES.map((category) => ({
+  const categoryOptions = categories.map((category) => ({
     value: category,
     label: category,
   }));
 
   return (
     <form onSubmit={handleSubmit} style={formStyle}>
-      <TextField
-        label="Amount"
-        type="number"
-        step="0.01"
-        placeholder="0.00"
-        value={formData.amount}
-        onChange={(e) => handleChange("amount", e.target.value)}
-        error={errors.amount}
-        fullWidth
-        required
-      />
+      <TextField label="Amount" type="number" step="0.01" placeholder="0.00" value={formData.amount} onChange={(e) => handleChange("amount", e.target.value)} error={errors.amount} fullWidth required />
+      <TextField label="Description" type="text" placeholder="Enter description" value={formData.description} onChange={(e) => handleChange("description", e.target.value)} error={errors.description} fullWidth required />
 
-      <TextField
-        label="Description"
-        type="text"
-        placeholder="Enter description"
-        value={formData.description}
-        onChange={(e) => handleChange("description", e.target.value)}
-        error={errors.description}
-        fullWidth
-        required
-      />
+      {onAddCategory && (
+        <Button type="button" variant="secondary" onClick={onAddCategory}>
+          Add Category
+        </Button>
+      )}
 
       <SelectBox
         label="Category"
@@ -87,24 +69,15 @@ export function ExpenseForm({
         error={errors.date}
         fullWidth
         required
+        max={new Date().toISOString().split("T")[0]}
       />
 
       <div style={buttonGroupStyle}>
-        <Button
-          type="submit"
-          variant="primary"
-          disabled={isSubmitting}
-          fullWidth
-        >
+        <Button type="submit" variant="primary" disabled={isSubmitting} fullWidth>
           {isSubmitting ? "Submitting..." : submitLabel}
         </Button>
         {onCancel && (
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={onCancel}
-            disabled={isSubmitting}
-          >
+          <Button type="button" variant="secondary" onClick={onCancel} disabled={isSubmitting}>
             Cancel
           </Button>
         )}

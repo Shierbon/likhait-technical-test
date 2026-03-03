@@ -1,20 +1,30 @@
 import React, { useState, useEffect } from "react";
-import { getExpenses, createExpense } from "../services/api";
+import {
+  getExpenses,
+  createExpense,
+  fetchCategories,
+  createCategory,
+} from "../services/api";
 import { Expense, ExpenseFormData } from "../types";
 import YearNavigation from "../components/YearNavigation";
 import { MonthNavigation } from "../components/MonthNavigation";
 import CategoryBreakdown from "../components/CategoryBreakdown";
 import { CalendarExpenseTable } from "../components/CalendarExpenseTable";
 import { ExpenseForm } from "../components/ExpenseForm";
-import { Modal, Button } from "../vibes";
+import { Modal, Button, TextField } from "../vibes";
 import { COLORS } from "../constants/colors";
 
 const HistoryPage: React.FC = () => {
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [expenseCategories, setExpenseCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Get year and month from URL params, default to current date if not provided
+  const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [categoryError, setCategoryError] = useState("");
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+
   const getInitialYearMonth = () => {
     const params = new URLSearchParams(window.location.search);
     const currentDate = new Date();
@@ -31,7 +41,6 @@ const HistoryPage: React.FC = () => {
   const [selectedYear, setSelectedYear] = useState(initial.year);
   const [selectedMonth, setSelectedMonth] = useState(initial.month);
 
-  // Update URL when year or month changes
   const updateURL = (year: number, month: number) => {
     const params = new URLSearchParams();
     params.set("year", year.toString());
@@ -40,16 +49,16 @@ const HistoryPage: React.FC = () => {
     window.history.pushState({}, "", newURL);
   };
 
-  // Initialize URL params if not present
   useEffect(() => {
     updateURL(selectedYear, selectedMonth);
+    void loadCategories();
   }, []);
 
   useEffect(() => {
-    fetchExpenses();
+    void loadExpenses();
   }, [selectedYear, selectedMonth]);
 
-  const fetchExpenses = async () => {
+  const loadExpenses = async () => {
     try {
       setLoading(true);
       const data = await getExpenses(selectedYear, selectedMonth);
@@ -58,6 +67,15 @@ const HistoryPage: React.FC = () => {
       console.error("Error fetching expenses:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadCategories = async () => {
+    try {
+      const data = await fetchCategories();
+      setExpenseCategories(data.map((c) => c.name));
+    } catch (error) {
+      console.error("Error fetching categories:", error);
     }
   };
 
@@ -74,21 +92,39 @@ const HistoryPage: React.FC = () => {
   const handleAddExpense = async (data: ExpenseFormData) => {
     try {
       await createExpense(data);
-      setIsModalOpen(false);
-      fetchExpenses();
+      setIsExpenseModalOpen(false);
+      await loadExpenses();
     } catch (error) {
       console.error("Error creating expense:", error);
       throw error;
     }
   };
 
-  // Calculate category breakdown
+  const handleCreateCategory = async () => {
+    const name = newCategoryName.trim();
+    if (!name) {
+      setCategoryError("Category name is required");
+      return;
+    }
+
+    try {
+      setIsCreatingCategory(true);
+      setCategoryError("");
+      await createCategory(name);
+      await loadCategories();
+      setNewCategoryName("");
+      setIsCategoryModalOpen(false);
+    } catch (error) {
+      setCategoryError(error instanceof Error ? error.message : "Failed to create category");
+    } finally {
+      setIsCreatingCategory(false);
+    }
+  };
+
   const categoryData = expenses.reduce(
     (acc, expense) => {
       const category = expense.category || "Uncategorized";
-      if (!acc[category]) {
-        acc[category] = { category, amount: 0, count: 0 };
-      }
+      if (!acc[category]) acc[category] = { category, amount: 0, count: 0 };
       acc[category].amount += Number(expense.amount);
       acc[category].count += 1;
       return acc;
@@ -96,11 +132,11 @@ const HistoryPage: React.FC = () => {
     {} as Record<string, { category: string; amount: number; count: number }>,
   );
 
-  const categories = Object.values(categoryData).sort(
+  const categoryBreakdown = Object.values(categoryData).sort(
     (a, b) => b.amount - a.amount,
   );
-  const total = categories.reduce((sum, cat) => sum + cat.amount, 0);
-  const totalCount = categories.reduce((sum, cat) => sum + cat.count, 0);
+  const total = categoryBreakdown.reduce((sum, cat) => sum + cat.amount, 0);
+  const totalCount = categoryBreakdown.reduce((sum, cat) => sum + cat.count, 0);
 
   const pageStyle: React.CSSProperties = {
     padding: "48px 64px",
@@ -143,12 +179,9 @@ const HistoryPage: React.FC = () => {
       <div style={headerStyle}>
         <div style={leftHeaderStyle}>
           <h1 style={titleStyle}>Expense History</h1>
-          <YearNavigation
-            currentYear={selectedYear}
-            onYearChange={handleYearChange}
-          />
+          <YearNavigation currentYear={selectedYear} onYearChange={handleYearChange} />
         </div>
-        <Button variant="primary" onClick={() => setIsModalOpen(true)}>
+        <Button variant="primary" onClick={() => setIsExpenseModalOpen(true)}>
           Add Expense
         </Button>
       </div>
@@ -165,29 +198,65 @@ const HistoryPage: React.FC = () => {
         ) : (
           <>
             <CategoryBreakdown
-              categories={categories}
+              categories={categoryBreakdown}
               total={total}
               totalCount={totalCount}
             />
             <div style={{ marginTop: "32px" }}>
-              <CalendarExpenseTable
-                expenses={expenses}
-                onExpenseUpdated={fetchExpenses}
-              />
+              <CalendarExpenseTable expenses={expenses} onExpenseUpdated={loadExpenses} />
             </div>
           </>
         )}
       </div>
 
       <Modal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        isOpen={isExpenseModalOpen}
+        onClose={() => setIsExpenseModalOpen(false)}
         title="Add New Expense"
       >
         <ExpenseForm
           onSubmit={handleAddExpense}
-          onCancel={() => setIsModalOpen(false)}
+          onCancel={() => setIsExpenseModalOpen(false)}
+          categories={expenseCategories}
+          onAddCategory={() => {
+            setCategoryError("");
+            setIsCategoryModalOpen(true);
+          }}
         />
+      </Modal>
+
+      <Modal
+        isOpen={isCategoryModalOpen}
+        onClose={() => setIsCategoryModalOpen(false)}
+        title="Add Category"
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <TextField
+            label="Category Name"
+            type="text"
+            value={newCategoryName}
+            onChange={(e) => setNewCategoryName(e.target.value)}
+            error={categoryError}
+            fullWidth
+            required
+          />
+          <div style={{ display: "flex", gap: "8px" }}>
+            <Button
+              variant="primary"
+              onClick={handleCreateCategory}
+              disabled={isCreatingCategory}
+            >
+              {isCreatingCategory ? "Creating..." : "Create"}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => setIsCategoryModalOpen(false)}
+              disabled={isCreatingCategory}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
